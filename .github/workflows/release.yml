@@ -57,6 +57,7 @@ jobs:
         id: package
         env:
           BUILD_TARGET: ${{ matrix.target }}
+          RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
         run: |
           $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { '' }
           ./tools/package-release.ps1 -Target $env:BUILD_TARGET -Tag $tag
