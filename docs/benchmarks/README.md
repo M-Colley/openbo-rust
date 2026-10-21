@@ -12,10 +12,13 @@ The Python reference is the maintainer's OpenBO revision
 [`3ceda2d34225d2f1601fc57815cd821fbc78f37d`](https://github.com/yichiliao/openbo/tree/3ceda2d34225d2f1601fc57815cd821fbc78f37d),
 checked against the upstream `main` branch on 2026-10-21. It is a separate,
 unmodified source snapshot, rather than the Python fork with additional fixes.
-The Rust implementation is OpenBO Rust 0.1.0, built in release mode. The report
-records hashes of the actual reference modules, Rust numerical source, benchmark
-drivers and executable; its Git status also records the benchmark additions that
-were awaiting commit when measured.
+The Rust implementation is OpenBO Rust 0.1.0, built in release mode. Its measured
+numerical source, manifest and benchmark drivers are preserved in
+[`42a7c71`](https://github.com/M-Colley/openbo-rust/tree/42a7c71277bb0a525593e29a0921bd623d8b6c10).
+The report records hashes of the actual reference modules, Rust numerical source,
+benchmark drivers and executable; its Git status records the benchmark additions
+that were awaiting that commit when measured. Later packaging rules can differ
+from the measured manifest without changing these numerical workloads.
 
 | Workload | Work per timed call |
 | --- | --- |
