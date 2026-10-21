@@ -77,7 +77,7 @@ try {
             $fileNames += $name
         }
     }
-    foreach ($name in @('examples', 'relevant_papers')) {
+    foreach ($name in @('examples', 'relevant_papers', 'docs')) {
         $source = Join-Path $projectRoot $name
         if (Test-Path -LiteralPath $source -PathType Container) {
             Copy-Item -LiteralPath $source -Destination (Join-Path $stage $name) -Recurse

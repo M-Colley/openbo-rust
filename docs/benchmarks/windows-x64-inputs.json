@@ -1,0 +1,11 @@
+{
+  "seed": 20261021,
+  "objective_points": 65536,
+  "ei_points": 65536,
+  "gp_small_train": 64,
+  "gp_small_query": 256,
+  "gp_medium_train": 256,
+  "gp_medium_query": 1024,
+  "hv_front": 128,
+  "hv_dominated": 128
+}

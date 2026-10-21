@@ -11,7 +11,7 @@ keywords = ["bayesian", "optimization", "gaussian-process", "machine-learning", 
 categories = ["algorithms", "science"]
 readme = "README.md"
 include = [
-    "Cargo.toml", "Cargo.lock", "src/**", "tests/**", "examples/**", "tools/**",
+    "Cargo.toml", "Cargo.lock", "src/**", "tests/**", "examples/**", "tools/**", "docs/**",
     "LICENSE", "README.md", "PORTING.md", "VALIDATION.md", "CHANGELOG.md",
     "CITATION.cff", "UPSTREAM_CITATION.cff", "relevant_papers/references.bib",
 ]

@@ -68,6 +68,36 @@ it. Maintainers can prepare executable archives with
 `pwsh -File tools/package-release.ps1`. Version tags and the manual **Build release
 assets** workflow produce the same archives on hosted builders.
 
+## Speed comparison
+
+Measured on 2026-10-21 against the maintainer's Python OpenBO revision
+[`3ceda2d`](https://github.com/yichiliao/openbo/tree/3ceda2d34225d2f1601fc57815cd821fbc78f37d),
+using Rust 0.1.0 in release mode. The machine was an Intel Core Ultra 7 155H with
+Windows 11 x64, Python 3.14.6, NumPy 2.5.4 and Rust 1.99.0.
+
+![Median Python and Rust CPU times for six matched workloads, with interquartile ranges](docs/benchmarks/comparison.svg)
+
+| Workload | Python (ms) | Rust (ms) | Rust result |
+| --- | ---: | ---: | ---: |
+| Branin objective (65,536 points, 2D) | 2.12 | 1.24 | 1.71× faster |
+| GP fit + predict (64 train, 256 query, 3D) | 0.907 | 0.438 | 2.07× faster |
+| GP fit + predict (256 train, 1,024 query, 3D) | 25.74 | 14.44 | 1.78× faster |
+| Expected improvement (65,536 predictions) | 6.15 | 2.51 | 2.45× faster |
+| 2D hypervolume (128 front + 128 dominated) | 3.26 | 0.491 | 6.64× faster |
+| BO candidate scoring (256 train, 1,024 candidates, 3D) | 24.60 | 13.10 | 1.88× faster |
+
+Times are warmed medians of **35 samples per backend and workload**, with both
+processes pinned to the same logical CPU and BLAS limited to one thread. Inputs
+and GP parameters match, and every workload passes numerical checks before
+timing. Imports, process startup, input generation and JSON I/O are excluded.
+
+The results include differences in numerical routines: Python uses general GP
+solves, a vectorized Python `erf` for EI and a cell-grid hypervolume method;
+Rust uses triangular solves, native normal probabilities and a sweep. These
+component timings describe this machine; complete optimizer runs and solution
+quality need separate experiments. See the [method and reproduction commands](docs/benchmarks/README.md)
+and [raw measurements with source hashes](docs/benchmarks/windows-x64.json).
+
 ## The conventions
 
 - Every objective is **maximized**. Classic minimization functions return their
