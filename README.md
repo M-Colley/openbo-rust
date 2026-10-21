@@ -10,6 +10,9 @@ The Cargo package is `openbo-rust`; its library and command are both named
 `3ceda2d`. Attribution, coverage and numerical differences are in
 [PORTING.md](PORTING.md).
 
+Start with the [student guide](https://m-colley.github.io/openbo-rust/) or browse
+the [public API reference](https://m-colley.github.io/openbo-rust/openbo/).
+
 ## First experiment
 
 Install a [Rust toolchain](https://www.rust-lang.org/tools/install), version 1.85
@@ -37,10 +40,17 @@ the compiled program. All commands below run from this repository's root.
 
 ## Install the package
 
-Install the versioned CLI from this repository:
+Install the versioned CLI from crates.io:
 
 ```sh
-cargo install --git https://github.com/M-Colley/openbo-rust.git --tag v0.1.0 --locked openbo-rust
+cargo install openbo-rust --version 0.1.1 --locked
+openbo quickstart
+```
+
+Or install the same release from this repository:
+
+```sh
+cargo install --git https://github.com/M-Colley/openbo-rust.git --tag v0.1.1 --locked openbo-rust
 openbo quickstart
 ```
 
@@ -56,14 +66,16 @@ To use the library in another Rust project, add this to its `Cargo.toml`:
 
 ```toml
 [dependencies]
-openbo = { package = "openbo-rust", git = "https://github.com/M-Colley/openbo-rust.git", tag = "v0.1.0" }
+openbo = { package = "openbo-rust", version = "0.1.1" }
 ```
 
-Then import it with `use openbo::...`. The Git dependency works independently of
-registry publication.
+Then import it with `use openbo::...`. A source-pinned alternative is
+`openbo = { package = "openbo-rust", git = "https://github.com/M-Colley/openbo-rust.git", tag = "v0.1.1" }`.
+The [versioned docs.rs reference](https://docs.rs/openbo-rust/0.1.1/openbo/)
+corresponds to the registry package.
 
 For source distributions, the Cargo archive is
-`target/package/openbo-rust-0.1.0.crate`; `cargo package --locked` builds and verifies
+`target/package/openbo-rust-0.1.1.crate`; `cargo package --locked` builds and verifies
 it. Maintainers can prepare executable archives with
 `pwsh -File tools/package-release.ps1`. Version tags and the manual **Build release
 assets** workflow produce the same archives on hosted builders.
@@ -72,7 +84,7 @@ assets** workflow produce the same archives on hosted builders.
 
 Measured on 2026-10-21 against the maintainer's Python OpenBO revision
 [`3ceda2d`](https://github.com/yichiliao/openbo/tree/3ceda2d34225d2f1601fc57815cd821fbc78f37d),
-using Rust 0.1.0 in release mode. The machine was an Intel Core Ultra 7 155H with
+using OpenBO Rust 0.1.0 in release mode. The machine was an Intel Core Ultra 7 155H with
 Windows 11 x64, Python 3.14.6, NumPy 2.5.4 and Rust 1.99.0.
 
 ![Median Python and Rust CPU times for six matched workloads, with interquartile ranges](docs/benchmarks/comparison.svg)
@@ -97,6 +109,45 @@ Rust uses triangular solves, native normal probabilities and a sweep. These
 component timings describe this machine; complete optimizer runs and solution
 quality need separate experiments. See the [method and reproduction commands](docs/benchmarks/README.md)
 and [raw measurements with source hashes](docs/benchmarks/windows-x64.json).
+
+The [complete workflow study](docs/benchmarks/workflows/README.md) extends this
+comparison to five seeds, complete scalar/MO/transfer/neural runs, and separate
+Windows, Linux and macOS environments. It measures achieved optimization quality
+alongside elapsed time; different search and training backends can produce
+different results.
+
+### Complete workflows and solution quality
+
+The 0.1.1 study contains **200 validated runs across four environments**. Each
+run uses 16 target evaluations; neural runs also perform 64 training evaluations.
+The figure keeps each machine separate. Dots show medians and lines show
+interquartile ranges across five seeds.
+
+![Complete Python and Rust workflow times on local Windows, hosted Linux, macOS ARM64 and hosted Windows](docs/benchmarks/workflows/workflow-timing.svg)
+
+For the same local Windows machine as above, median results are:
+
+| Workflow | Python (s) | Rust (s) | Python/Rust time | Final quality: Python / Rust |
+| --- | ---: | ---: | ---: | ---: |
+| BO / Branin | 0.2192 | 0.004572 | 47.95× | 0.002532 / 0.004165 regret ↓ |
+| BO / Hartmann-6 | 0.6311 | 0.01076 | 58.65× | 1.965 / 1.737 regret ↓ |
+| MOBO / OKA2 | 0.2308 | 0.1480 | 1.56× | 0.7101 / 0.6148 HV fraction ↑ |
+| TAF-R / Branin | 0.3004 | 0.009394 | 31.98× | 0.002532 / 0.008200 regret ↓ |
+| Tiny NAF training + BO | 0.1326 | 0.02126 | 6.24× | 0.2002 / 0.9022 regret ↓ |
+
+Lower regret and higher hypervolume fraction are better. Rust finishes faster
+at the median in these experiments, while Python achieves better median final
+quality on four of the five local workloads. Individual timings also include a
+Rust loss. These are implementation comparisons with different numerical,
+search and training routines; time ratios alone do not establish equivalent
+solutions or a language-only speedup. The tiny neural run checks training and
+inference, rather than a converged policy.
+
+![Local median optimization quality over 16 target evaluations, with interquartile bands](docs/benchmarks/workflows/windows-local-quality.svg)
+
+See the [tables and quality trajectories for all environments](docs/benchmarks/workflows/RESULTS.md),
+[measurement controls and reproduction commands](docs/benchmarks/workflows/README.md),
+and [local raw observations and provenance](docs/benchmarks/workflows/windows-local.json).
 
 ## The conventions
 

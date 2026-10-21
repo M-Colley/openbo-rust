@@ -18,6 +18,21 @@ param(
     [switch]$SkipBuild
 )
 
+function Update-StagedStudentGuide {
+    param(
+        [Parameter(Mandatory)][string]$Directory,
+        [Parameter(Mandatory)][string]$PackageVersion,
+        [Parameter(Mandatory)][string]$BuildRevision
+    )
+    $guidePath = Join-Path $Directory 'docs/index.html'
+    if (-not (Test-Path -LiteralPath $guidePath -PathType Leaf)) { return }
+    $guide = [IO.File]::ReadAllText($guidePath)
+    $guide = $guide.Replace('@PACKAGE_VERSION@', $PackageVersion).Replace('@BUILD_REVISION@', $BuildRevision)
+    # Native archives do not contain rustdoc's openbo/ directory.
+    $guide = [regex]::Replace($guide, '(?i)(\bhref\s*=\s*["''])openbo/', '${1}https://m-colley.github.io/openbo-rust/openbo/')
+    [IO.File]::WriteAllText($guidePath, $guide, [Text.UTF8Encoding]::new($false))
+}
+
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Push-Location -LiteralPath $projectRoot
@@ -90,6 +105,15 @@ try {
             $fileNames += $name
         }
     }
+    $buildRevision = "v$($package.version)"
+    # Do not inherit a parent checkout's revision when packaging a source archive.
+    if ((Test-Path -LiteralPath (Join-Path $projectRoot '.git')) -and (Get-Command git -ErrorAction SilentlyContinue)) {
+        $revision = (& git -C $projectRoot rev-parse --verify HEAD 2>$null) -join ''
+        if ($LASTEXITCODE -eq 0 -and $revision -match '^[a-fA-F0-9]{40,64}$') {
+            $buildRevision = $revision
+        }
+    }
+    Update-StagedStudentGuide -Directory $stage -PackageVersion $package.version -BuildRevision $buildRevision
     $baseName = "$($package.name)-$($package.version)-$Target"
     if ($Target -like '*-windows-*') {
         $archive = Join-Path $OutputDirectory "$baseName.zip"

@@ -10,6 +10,8 @@
   comparison figures with reproducibility details.
 - A multi-seed workflow benchmark harness for scalar, multi-objective, transfer
   and neural optimization, retaining timing and optimization quality per evaluation.
+- Four-environment workflow results: 200 validated runs with timing tables,
+  quality trajectories, shared inputs and source provenance.
 - Rooted Cargo package allowlists exclude ignored results and Python bytecode;
   source and native archives retain documentation assets and relative image links.
 - Updated package and citation metadata for registry distribution.

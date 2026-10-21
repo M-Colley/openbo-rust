@@ -10,6 +10,38 @@ their own hardware, Python/dependency versions, compiler, affinity and source
 hashes. Compare backends within one report. Timings from different runners are
 not pooled into an overall speedup.
 
+## Recorded results
+
+The 2026-10-21 study contains **200 complete runs**: four environments × five
+workflows × five seeds × two implementations. All 3,200 target observations and
+2,560 neural training evaluations passed the recorded checks. Independent
+post-run audits also recomputed objective values, quality curves and summary
+statistics from the saved observations.
+
+![Median workflow times and interquartile ranges, separately for four environments](workflow-timing.svg)
+
+[All timing and final-quality tables](RESULTS.md) retain each environment's
+results separately. Read them alongside the quality trajectories:
+
+| Environment | Raw observations and provenance | Shared inputs | Quality trajectories |
+| --- | --- | --- | --- |
+| Local Windows, Core Ultra 7 155H | [Report](windows-local.json) | [Inputs](windows-local-inputs.json) | [Figure](windows-local-quality.svg) |
+| Hosted Linux, EPYC 9V45 | [Report](workflows-linux-x64.json) | [Inputs](workflows-linux-x64-inputs.json) | [Figure](workflows-linux-x64-quality.svg) |
+| Hosted Windows, Xeon 8573C | [Report](workflows-windows-x64.json) | [Inputs](workflows-windows-x64-inputs.json) | [Figure](workflows-windows-x64-quality.svg) |
+| Hosted macOS ARM64, Apple M1 virtual | [Report](workflows-macos-arm64.json) | [Inputs](workflows-macos-arm64-inputs.json) | [Figure](workflows-macos-arm64-quality.svg) |
+
+The native measured source is commit
+[`3fc2c0e`](https://github.com/M-Colley/openbo-rust/tree/3fc2c0ef5bb7c7735ce85cf7982a98cb75eb0bd8),
+including the corrected scalar TAF cold start. The Python source is
+[`3ceda2d`](https://github.com/yichiliao/openbo/tree/3ceda2d34225d2f1601fc57815cd821fbc78f37d).
+Per-file source and executable hashes are retained in every report. The three
+hosted reports come from [workflow run 39666657168](https://github.com/M-Colley/openbo-rust/actions/runs/39666657168).
+
+Rust has lower median run times in these experiments, but often reaches worse
+final quality at this small budget. A per-seed Rust timing loss is retained.
+Different numerical and search routines, short runs and hosted-runner variability
+limit what these ratios establish. No timing or quality results are discarded.
+
 ## Workloads and controls
 
 | Workflow | Target budget | Initialization / prior information | Quality measure |

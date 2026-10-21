@@ -7,8 +7,10 @@ Matplotlib and NumPy are optional development dependencies, not Rust requirement
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import math
+import textwrap
 from pathlib import Path
 
 LABELS = {
@@ -45,7 +47,8 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path("docs/benchmarks/workflows"))
     args = parser.parse_args()
     reports = []
-    for path in args.reports:
+    paths = [Path(match) for pattern in args.reports for match in (sorted(glob.glob(str(pattern))) or [str(pattern)])]
+    for path in paths:
         report = json.loads(path.read_text(encoding="utf-8"))
         if "runs" not in report or "workloads" not in report:
             continue
@@ -67,7 +70,8 @@ def main() -> None:
     })
     columns = min(2, len(reports))
     rows = math.ceil(len(reports) / columns)
-    figure, axes = plt.subplots(rows, columns, figsize=(7.3 * columns, 4.2 * rows + 1), squeeze=False)
+    figure_width = 11 if columns == 1 else 7.3 * columns
+    figure, axes = plt.subplots(rows, columns, figsize=(figure_width, 4.2 * rows + 1), squeeze=False)
     tables = ["# Complete workflow results", "", "Each environment is measured independently. Ratios compare backends within that environment; they do not pool platforms.", ""]
     for index, (path, report) in enumerate(reports):
         axis = axes.flat[index]
@@ -99,8 +103,8 @@ def main() -> None:
             python, rust = workload["python"], workload["rust"]
             metric = "HV fraction ↑" if python["quality_direction"] == "maximize" else "regret ↓"
             ratio = python["total_seconds"]["median"] / rust["total_seconds"]["median"]
-            tables.append(f"| {LABELS.get(workload['id'], workload['label'])} | {python['total_seconds']['median']:.3f} | "
-                          f"{rust['total_seconds']['median']:.3f} | {ratio:.2f}× | "
+            tables.append(f"| {LABELS.get(workload['id'], workload['label'])} | {python['total_seconds']['median']:.4g} | "
+                          f"{rust['total_seconds']['median']:.4g} | {ratio:.2f}× | "
                           f"{python['final_quality']['median']:.4g} / {rust['final_quality']['median']:.4g} ({metric}) |")
         tables += ["", f"[Raw report]({path.name}) · [Quality trajectories]({path.stem}-quality.svg)", ""]
         quality, quality_axes = plt.subplots(2, 3, figsize=(13.5, 8))
@@ -131,8 +135,9 @@ def main() -> None:
         plt.close(quality)
     for unused in list(axes.flat)[len(reports):]:
         unused.axis("off")
-    figure.suptitle("Complete OpenBO workflows: measured time and optimization quality", fontsize=17, x=0.04, ha="left", y=0.98)
-    figure.text(0.04, 0.025, "Dots: median run times. Lines: interquartile ranges across seeds. Each machine is a separate experiment; see quality curves and raw data alongside these timings.",
+    figure.suptitle("OpenBO workflows: time to finish the evaluation budget", fontsize=17, x=0.04, ha="left", y=0.98)
+    footer = "Dots: median run times. Lines: interquartile ranges across seeds. Each machine is a separate experiment; see quality curves and raw data alongside these timings."
+    figure.text(0.04, 0.025, textwrap.fill(footer, width=130 if columns == 1 else 200),
                 fontsize=9, color="#465B6B")
     figure.tight_layout(rect=(0.01, 0.07, 1, 0.93), h_pad=3, w_pad=3)
     save(figure, args.output_dir / "workflow-timing")

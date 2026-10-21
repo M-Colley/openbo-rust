@@ -80,9 +80,13 @@
         before drawing conclusions about an optimizer.</li>
     </ol>
     <p>Prefer building from source? Install <a href="https://www.rust-lang.org/tools/install">Rust 1.85 or newer</a>
-      and your platform's linker/build tools, then install the versioned Git package:</p>
-    <pre><code>cargo install --git https://github.com/M-Colley/openbo-rust.git --tag v@PACKAGE_VERSION@ --locked openbo-rust
+      and your platform's linker/build tools, then install the versioned Cargo package:</p>
+    <pre><code>cargo install openbo-rust --version @PACKAGE_VERSION@ --locked
 openbo quickstart</code></pre>
+    <p>The <a href="https://crates.io/crates/openbo-rust">crates.io package</a> and
+      <a href="https://docs.rs/openbo-rust/@PACKAGE_VERSION@/openbo/">versioned API documentation</a>
+      retain the release. A Git alternative is
+      <code>cargo install --git https://github.com/M-Colley/openbo-rust.git --tag v@PACKAGE_VERSION@ --locked openbo-rust</code>.</p>
   </section>
   <section aria-labelledby="learn-title">
     <h2 id="learn-title">A path through the library</h2>
@@ -129,7 +133,7 @@ openbo quickstart</code></pre>
         <p>Read the tests, fixed-input Python comparisons, measured timings, and the
           numerical differences that matter for research.</p>
         <a href="https://github.com/M-Colley/openbo-rust/blob/main/VALIDATION.md">Validation record</a> ·
-        <a href="https://github.com/M-Colley/openbo-rust/blob/main/docs/benchmarks/README.md">Benchmark methods</a></article>
+        <a href="https://github.com/M-Colley/openbo-rust/blob/main/docs/benchmarks/workflows/README.md">Timing and quality study</a></article>
     </div>
     <p class="muted">This is an independent port of <a href="https://github.com/yichiliao/openbo">OpenBO</a>.
       Native search, random streams, and neural training can produce different trajectories from Python.
