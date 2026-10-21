@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Start learning Bayesian optimization with the native OpenBO Rust library, command-line experiments, and browsable API documentation.">
+  <title>OpenBO Rust — learn, experiment, optimize</title>
+  <style>
+    :root { color-scheme: light; --ink:#163047; --muted:#465b6b; --blue:#15539b; --line:#d8e1e9; --paper:#f5f8fb; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); font:17px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:white; }
+    a { color:var(--blue); text-underline-offset:.18em; }
+    a:hover { text-decoration-thickness:2px; }
+    a:focus-visible { outline:3px solid #f5b942; outline-offset:5px; }
+    .skip { position:absolute; top:-5rem; left:1rem; padding:.6rem 1rem; background:white; }
+    .skip:focus { top:1rem; }
+    .wrap { width:min(1120px,calc(100% - 3rem)); margin:auto; }
+    header { background:#102b43; color:white; padding:3rem 0 3.5rem; }
+    header a { color:#d9ecff; }
+    .eyebrow { margin:0 0 .6rem; color:#bad3e9; font-weight:650; letter-spacing:.06em; text-transform:uppercase; font-size:.8rem; }
+    h1 { font-size:clamp(2.4rem,6vw,4.2rem); line-height:1.1; letter-spacing:-.04em; margin:0 0 1.2rem; }
+    header p { max-width:760px; font-size:1.16rem; color:#e0eaf2; }
+    nav { display:flex; flex-wrap:wrap; gap:1rem; margin-top:1.8rem; }
+    .button { display:inline-block; padding:.65rem 1rem; border:1px solid #8eabc3; border-radius:.45rem; text-decoration:none; font-weight:600; }
+    .primary { background:white; color:#123d68; border-color:white; }
+    main { padding:2.4rem 0 3rem; }
+    section { margin:0 0 3rem; scroll-margin-top:1rem; }
+    h2 { font-size:1.7rem; line-height:1.25; letter-spacing:-.02em; margin:0 0 1rem; }
+    h3 { font-size:1.07rem; margin:0 0 .45rem; }
+    p { margin:.5rem 0 1rem; }
+    .muted { color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; }
+    .card { padding:1.3rem; border:1px solid var(--line); border-radius:.6rem; background:var(--paper); }
+    .card p { font-size:.96rem; }
+    pre { padding:1.1rem 1.2rem; overflow:auto; border:1px solid var(--line); border-radius:.45rem; background:var(--paper); line-height:1.55; }
+    code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:.86em; }
+    li { margin:.35rem 0; }
+    .note { padding:1rem 1.2rem; border-left:4px solid #2c70ad; background:#edf5fc; }
+    .steps { padding-left:1.4rem; }
+    .steps > li { margin-bottom:1.2rem; padding-left:.35rem; }
+    footer { border-top:1px solid var(--line); padding:1.4rem 0 2rem; font-size:.88rem; color:var(--muted); }
+    footer p { overflow-wrap:anywhere; }
+    @media(max-width:800px) { .grid { grid-template-columns:1fr; } .wrap { width:calc(100% - 2rem); } header { padding:2rem 0; } }
+  </style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header>
+  <div class="wrap">
+    <p class="eyebrow">Native Rust · version @PACKAGE_VERSION@ · MIT</p>
+    <h1>Learn Bayesian optimization.<br>Run a real experiment.</h1>
+    <p>OpenBO Rust is a library and command-line toolkit for Bayesian, transfer,
+      continual, and multi-objective optimization. Its double-precision CPU runtime
+      needs neither Python nor PyTorch.</p>
+    <nav aria-label="Main navigation">
+      <a class="button primary" href="#start">Start an experiment</a>
+      <a class="button" href="openbo/index.html">Browse the API</a>
+      <a class="button" href="https://github.com/M-Colley/openbo-rust">Source and guide</a>
+    </nav>
+  </div>
+</header>
+<main id="main" class="wrap">
+  <section id="start" aria-labelledby="start-title">
+    <h2 id="start-title">Your first experiment</h2>
+    <ol class="steps">
+      <li><strong>Download the command.</strong> Open the <a href="https://github.com/M-Colley/openbo-rust/releases/latest">latest release</a>,
+        choose the archive for Windows x86-64, Linux x86-64, macOS Apple Silicon, or macOS Intel,
+        verify its accompanying SHA-256, and extract it. The prebuilt command needs no Rust toolchain.</li>
+      <li><strong>Run a comparison.</strong> From the extracted directory, use a terminal:
+        <pre><code># Linux or macOS
+./openbo quickstart
+
+# Windows PowerShell
+./openbo.exe quickstart</code></pre>
+        <p>Open <code>results/quickstart/comparison.svg</code>. The plot compares random search
+          and BO on Branin with the same 12-evaluation budget. The two JSON files keep
+          every input, observation, and best-so-far value.</p></li>
+      <li><strong>Try another seed.</strong> Run <code>./openbo quickstart --seed 1 --output-dir results/seed1</code>
+        (use <code>./openbo.exe</code> on Windows). One run is an illustration; compare several seeds
+        before drawing conclusions about an optimizer.</li>
+    </ol>
+    <p>Prefer building from source? Install <a href="https://www.rust-lang.org/tools/install">Rust 1.85 or newer</a>
+      and your platform's linker/build tools, then install the versioned Git package:</p>
+    <pre><code>cargo install --git https://github.com/M-Colley/openbo-rust.git --tag v@PACKAGE_VERSION@ --locked openbo-rust
+openbo quickstart</code></pre>
+  </section>
+  <section aria-labelledby="learn-title">
+    <h2 id="learn-title">A path through the library</h2>
+    <div class="grid">
+      <article class="card">
+        <h3>1. Model an unknown function</h3>
+        <p>Fit a Gaussian process and inspect its predictive mean and latent variance.
+          Choose ARD RBF or Matérn-5/2 kernels.</p>
+        <a href="openbo/core/struct.GaussianProcess.html">GaussianProcess API</a>
+      </article>
+      <article class="card">
+        <h3>2. Choose the next observation</h3>
+        <p>Score candidates with expected improvement, then explore transfer weights,
+          Pareto geometry, and multi-objective acquisitions.</p>
+        <a href="openbo/acquisition/index.html">Acquisition functions</a>
+      </article>
+      <article class="card">
+        <h3>3. Connect your experiment</h3>
+        <p>Use <code>suggest()</code> and <code>observe()</code> to connect an optimizer
+          to your own objective or measurement process.</p>
+        <a href="openbo/optimizers/struct.SequentialOptimizer.html">Ask/tell optimizer API</a>
+      </article>
+    </div>
+    <p>Clone the repository and run <code>cargo run --release --locked --example student</code>
+      for a complete GP, EI, and ask/tell example.
+      <a href="https://github.com/M-Colley/openbo-rust/blob/main/examples/student.rs">Read the annotated source</a>.</p>
+    <div class="note"><strong>Conventions:</strong> every objective is maximized; supplied benchmark
+      inputs lie in <code>[0, 1]^d</code>; GP noise is a variance; predictions describe the latent function.
+      The native evaluation budget is <code>n_init + n_iter</code>.</div>
+  </section>
+  <section aria-labelledby="explore-title">
+    <h2 id="explore-title">Go further</h2>
+    <div class="grid">
+      <article class="card"><h3>Experiments and examples</h3>
+        <p>Transfer sources, task families, multi-objective studies, neural acquisition policies,
+          continual users, and a WebSocket server.</p>
+        <a href="https://github.com/M-Colley/openbo-rust/blob/main/README.md#methods-and-workflows">Workflow guide</a></article>
+      <article class="card"><h3>Understand the API</h3>
+        <p>Browse <a href="openbo/neural/index.html">neural training</a>,
+          <a href="openbo/server/index.html">server sessions</a>, and
+          <a href="openbo/optimizers/index.html">optimizer configuration</a>.</p>
+        <a href="openbo/index.html">Complete Rust reference</a></article>
+      <article class="card"><h3>Assess the evidence</h3>
+        <p>Read the tests, fixed-input Python comparisons, measured timings, and the
+          numerical differences that matter for research.</p>
+        <a href="https://github.com/M-Colley/openbo-rust/blob/main/VALIDATION.md">Validation record</a> ·
+        <a href="https://github.com/M-Colley/openbo-rust/blob/main/docs/benchmarks/README.md">Benchmark methods</a></article>
+    </div>
+    <p class="muted">This is an independent port of <a href="https://github.com/yichiliao/openbo">OpenBO</a>.
+      Native search, random streams, and neural training can produce different trajectories from Python.
+      BoTorch-compatible selectors use native backends, and there is no GPU backend.
+      See <a href="https://github.com/M-Colley/openbo-rust/blob/main/PORTING.md">coverage and backend notes</a>.
+      Cite the implementation and the methods you use; attribution accompanies every release.</p>
+  </section>
+</main>
+<footer><div class="wrap">
+  <p>OpenBO Rust · <a href="https://github.com/M-Colley/openbo-rust/blob/main/LICENSE">MIT license</a> ·
+    <a href="https://github.com/M-Colley/openbo-rust/issues">Questions and issues</a> ·
+    Documentation built from <a href="https://github.com/M-Colley/openbo-rust/tree/@BUILD_REVISION@">@BUILD_REVISION@</a>.</p>
+</div></footer>
+</body>
+</html>
