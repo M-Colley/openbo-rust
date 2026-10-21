@@ -50,6 +50,9 @@ identical learning curves. The native backend choices are:
   validation before committing fitted model state. Scalar hyperparameter search
   uses bounded numerical gradients/BFGS; multi-output fitting uses bounded
   coordinate MAP search. Neither invokes SciPy or GPyTorch.
+  Ordinary scalar BO/TAF refits start from the configured GP parameters; the
+  Python sequential optimizers warm-start from their preceding fitted parameters.
+  This changes both the fitting work and the resulting trajectories.
 - **Acquisition search:** seeded low-discrepancy candidates, followed by bounded
   coordinate refinement from several starts for scalar methods. The `grid`
   selector scans candidates without refinement. Search differs from SciPy or
@@ -118,6 +121,9 @@ the corresponding native operations include validation and regression coverage:
 - PPO best-policy checkpoints retain the policy that produced the measured
   rollout return, before the next update. NAF observations/episode steps reject
   invalid shapes, nonfinite values and exhausted budgets before mutation.
+- Scalar TAF uses weighted source-relative quantile/softplus improvement from
+  its first source-only suggestion, and skips unused target fitting during
+  source-only warmup. Empty-target meta-features retain the actual input dimension.
 
 Native regression tests also cover rejected observations preserving pending
 experiments, overflow-safe midpoint/rating calculations, source and checkpoint

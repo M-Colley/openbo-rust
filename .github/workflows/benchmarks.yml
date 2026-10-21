@@ -1,0 +1,124 @@
+name: Workflow performance and quality study
+
+# Deliberately separate from correctness CI. Each hosted machine is a distinct
+# environment; compare backends within its report, never pool runner timings.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-study-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  PYTHONUNBUFFERED: '1'
+  PYTHONHASHSEED: '0'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  BLIS_NUM_THREADS: '1'
+  VECLIB_MAXIMUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+  REFERENCE_REVISION: 3ceda2d34225d2f1601fc57815cd821fbc78f37d
+
+jobs:
+  benchmark:
+    name: Five-seed study (${{ matrix.host }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            host: linux-x64
+            python_arch: x64
+          - os: windows-latest
+            host: windows-x64
+            python_arch: x64
+          - os: macos-latest
+            host: macos-arm64
+            python_arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out the native implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check out the exact public Python baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: yichiliao/openbo
+          ref: 3ceda2d34225d2f1601fc57815cd821fbc78f37d
+          path: results/python-reference
+          persist-credentials: false
+      - name: Set up the reference Python runtime
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.python_arch }}
+      - name: Retain the public baseline's numerical dependency versions
+        run: |
+          New-Item -ItemType Directory -Path results/benchmarks -Force | Out-Null
+          @'
+          import pathlib, tomllib
+          lock = tomllib.loads(pathlib.Path('results/python-reference/uv.lock').read_text(encoding='utf-8'))
+          names = {'botorch', 'gpytorch', 'numpy', 'scipy', 'threadpoolctl', 'torch'}
+          packages = {p['name']: p['version'] for p in lock['package'] if p['name'] in names}
+          if set(packages) != names:
+              raise RuntimeError('The baseline lockfile is missing numerical dependencies')
+          constraints = '\n'.join(f'{name}=={packages[name]}' for name in sorted(packages)) + '\n'
+          pathlib.Path('results/benchmarks/reference-constraints.txt').write_text(constraints, encoding='utf-8')
+          print(constraints)
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install the official CPU PyTorch wheel
+        if: runner.os != 'macOS'
+        run: |
+          python -m pip install --constraint results/benchmarks/reference-constraints.txt --index-url https://download.pytorch.org/whl/cpu torch
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install the reference project
+        run: |
+          python -m pip install --constraint results/benchmarks/reference-constraints.txt --editable results/python-reference
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip freeze --all | Set-Content -LiteralPath results/benchmarks/python-environment.txt -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default stable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build and run the matched workflow study
+        env:
+          STUDY_HOST: ${{ matrix.host }}
+        run: |
+          python tools/benchmark_workflows.py --python-checkout results/python-reference --reference-revision $env:REFERENCE_REVISION --build --output "results/benchmarks/workflows-$env:STUDY_HOST.json" --seeds 0 1 2 3 4
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record interpretation limits
+        if: always()
+        env:
+          STUDY_HOST: ${{ matrix.host }}
+        run: |
+          @"
+          ## Workflow study: $env:STUDY_HOST
+
+          Five seeds compare real scalar BO, multi-objective BO, transfer, and a small neural training workflow.
+          Download the raw JSON for trajectories, quality metrics, timing, numerical backends and environment details.
+          Each runner is a separate environment. Hosted machine timings are not pooled into a cross-platform speed claim.
+          Windows/Linux pin a permitted logical CPU; macOS records unavailable affinity and limits numerical thread pools.
+          "@ | Out-File -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+      - name: Upload raw study results and the reference environment
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workflow-study-${{ matrix.host }}-${{ github.sha }}
+          path: results/benchmarks/
+          if-no-files-found: error
+          retention-days: 90

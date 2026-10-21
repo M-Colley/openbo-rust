@@ -309,6 +309,9 @@ impl OptimizerConfig {
     pub fn is_transfer(&self) -> bool {
         self.method.contains("taf") || self.is_plus()
     }
+    fn is_scalar_taf(&self) -> bool {
+        matches!(self.method.as_str(), "bo_taf" | "bo_taf_m" | "bo_taf_r")
+    }
     pub fn is_taf_eipv(&self) -> bool {
         matches!(self.method.as_str(), "taf_eipv" | "mobo_taf_eipv")
     }
@@ -458,8 +461,47 @@ impl SequentialOptimizer {
                             .collect()
                     })
                     .collect();
+            let source_only_weights = if self.config.is_scalar_taf()
+                && !self.sources.is_empty()
+                && (self.y_obs.is_empty()
+                    || self.y_obs.len() < self.config.source_only_warmup_iters)
+            {
+                let weights = self.compute_source_weights()?;
+                // With no target data there is no target model to fall back to.
+                // Otherwise retain the target fallback when every source is inactive.
+                (self.y_obs.is_empty() || weights.iter().any(|w| *w > 0.0)).then_some(weights)
+            } else {
+                None
+            };
             if self.config.is_native_eipv() {
                 self.suggest_eipv(&pool, seed)?
+            } else if let Some(source_weights) = source_only_weights {
+                let values =
+                    self.scalar_taf_scores(&pool, &vec![0.0; pool.len()], &source_weights, 0.0)?;
+                let index = argmax(&values)?;
+                let mut best = pool[index].clone();
+                let mut best_value = values[index];
+                if self.config.refine {
+                    let mut order = (0..pool.len()).collect::<Vec<_>>();
+                    order.sort_by(|&a, &b| values[b].total_cmp(&values[a]).then(a.cmp(&b)));
+                    for &i in order.iter().take(self.config.n_starts) {
+                        let point = refine(&pool[i], &self.config.bounds, |x| {
+                            self.scalar_taf_scores(x, &vec![0.0; x.len()], &source_weights, 0.0)
+                        })?;
+                        let value = self.scalar_taf_scores(
+                            &vec![point.clone()],
+                            &[0.0],
+                            &source_weights,
+                            0.0,
+                        )?[0];
+                        if value > best_value {
+                            best = point;
+                            best_value = value;
+                        }
+                    }
+                }
+                self.last_source_weights = source_weights;
+                best
             } else if self.y_obs.is_empty() {
                 if self.sources.is_empty() {
                     if self.config.is_plus() {
@@ -838,11 +880,12 @@ impl SequentialOptimizer {
                 .iter()
                 .map(|s| s.meta_features.clone())
                 .collect();
-            return acq::meta_weights(
-                &source_meta,
-                &meta_features(&self.x_obs, &self.y_obs),
-                self.config.rho,
-            );
+            let target_meta = if self.config.is_scalar_taf() && self.x_obs.is_empty() {
+                vec![self.config.bounds.len() as f64, 0.0, 0.0]
+            } else {
+                meta_features(&self.x_obs, &self.y_obs)
+            };
+            return acq::meta_weights(&source_meta, &target_meta, self.config.rho);
         }
         let predicted = self
             .sources
@@ -904,35 +947,56 @@ impl SequentialOptimizer {
         if !self.config.is_transfer() || self.sources.is_empty() {
             return Ok(target);
         }
-        let warmup = self.bo_suggestions < self.config.source_only_warmup_iters;
+        let warmup = self.y_obs.len() < self.config.source_only_warmup_iters;
         let target_weight = if warmup {
             0.0
         } else {
             self.config.target_weight
         };
-        let mut result = target.iter().map(|v| target_weight * v).collect::<Vec<_>>();
-        let mut denominator = target_weight;
-        for (s, &w) in self.sources.iter().zip(source_weights) {
-            if w <= 0.0 {
+        self.scalar_taf_scores(x, &target, source_weights, target_weight)
+    }
+    fn scalar_taf_scores(
+        &self,
+        x: &Matrix,
+        target: &[f64],
+        source_weights: &[f64],
+        target_weight: f64,
+    ) -> Result<Vec<f64>> {
+        if target_weight <= 0.0 && !source_weights.iter().any(|w| *w > 0.0) {
+            return Ok(target.to_vec());
+        }
+        let mut source_means = Vec::with_capacity(self.sources.len());
+        let mut references = Vec::with_capacity(self.sources.len());
+        for (source, &weight) in self.sources.iter().zip(source_weights) {
+            if weight <= 0.0 {
+                source_means.push(vec![0.0; x.len()]);
+                references.push(0.0);
                 continue;
             }
-            let (mu, _) = s.gps[0].predict(x)?;
-            let mut ys = s.y.iter().map(|r| r[0]).collect::<Vec<_>>();
+            source_means.push(source.gps[0].predict(x)?.0);
+            let mut ys = source.y.iter().map(|row| row[0]).collect::<Vec<_>>();
             ys.sort_by(f64::total_cmp);
             let q = self.config.source_reference_quantile * (ys.len() - 1) as f64;
-            let reference =
-                ys[q.floor() as usize] * (1.0 - q.fract()) + ys[q.ceil() as usize] * q.fract();
-            let tau = self.config.source_improvement_temperature;
-            for (r, m) in result.iter_mut().zip(mu) {
-                let z = (m - reference) / tau;
-                *r += w * tau * (z.max(0.0) + (-z.abs()).exp().ln_1p());
-            }
-            denominator += w;
+            references.push(
+                ys[q.floor() as usize] * (1.0 - q.fract()) + ys[q.ceil() as usize] * q.fract(),
+            );
         }
-        if denominator <= 0.0 {
-            return Ok(target);
-        }
-        Ok(result.iter().map(|v| v / denominator).collect())
+        (0..x.len())
+            .map(|i| {
+                let means = source_means
+                    .iter()
+                    .map(|values| values[i])
+                    .collect::<Vec<_>>();
+                acq::taf_acquisition(
+                    Some(target[i]),
+                    &means,
+                    &references,
+                    source_weights,
+                    target_weight,
+                    Some(self.config.source_improvement_temperature),
+                )
+            })
+            .collect()
     }
     fn plus_scores(&self, x: &Matrix, gps: &[GaussianProcess]) -> Result<Vec<f64>> {
         let (mean, var) = predict_gps(gps, x)?;

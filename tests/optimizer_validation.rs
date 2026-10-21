@@ -240,7 +240,7 @@ fn transfer_without_sources_reduces_to_target_search_and_supports_zero_initial_p
 #[test]
 fn transfer_warmup_uses_source_even_when_target_scale_changes() {
     let mut a = SequentialOptimizer::new(OptimizerConfig {
-        source_only_warmup_iters: 2,
+        source_only_warmup_iters: 3,
         target_weight: 100.,
         ..config("bo_taf")
     })

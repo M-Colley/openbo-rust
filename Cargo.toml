@@ -1,12 +1,13 @@
 [package]
 name = "openbo-rust"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.85"
 description = "Native Rust research and teaching library for Bayesian optimization"
 license = "MIT"
 repository = "https://github.com/M-Colley/openbo-rust"
-homepage = "https://github.com/M-Colley/openbo-rust"
+homepage = "https://m-colley.github.io/openbo-rust/"
+documentation = "https://m-colley.github.io/openbo-rust/openbo/"
 keywords = ["bayesian", "optimization", "gaussian-process", "machine-learning", "research"]
 categories = ["algorithms", "science"]
 readme = "README.md"
@@ -16,6 +17,10 @@ include = [
     "/LICENSE", "/README.md", "/PORTING.md", "/VALIDATION.md", "/CHANGELOG.md",
     "/CITATION.cff", "/UPSTREAM_CITATION.cff", "/relevant_papers/references.bib",
 ]
+
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-gnu"
+targets = []
 
 [dependencies]
 anyhow = "1"

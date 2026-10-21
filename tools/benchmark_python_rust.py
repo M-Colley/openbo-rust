@@ -103,6 +103,9 @@ def git_metadata(directory: Path) -> dict:
 
 def hardware() -> dict:
     result = {"platform": platform.platform(), "machine": platform.machine(), "processor": platform.processor(), "logical_cpus": os.cpu_count()}
+    runner_keys = {"os": "RUNNER_OS", "architecture": "RUNNER_ARCH", "image_os": "ImageOS", "image_version": "ImageVersion"}
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        result["github_runner"] = {name: os.environ[key] for name, key in runner_keys.items() if os.environ.get(key)}
     if sys.platform == "win32":
         result["power_plan"] = command_text(["powercfg", "/getactivescheme"])
         raw = command_text(["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | ConvertTo-Json -Compress"])
@@ -110,6 +113,37 @@ def hardware() -> dict:
             result["cpu"] = json.loads(raw)
         except json.JSONDecodeError:
             result["cpu_query"] = raw
+    elif sys.platform.startswith("linux"):
+        try:
+            text = Path("/proc/cpuinfo").read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        processors = []
+        for block in text.strip().split("\n\n"):
+            fields = dict(line.split(":", 1) for line in block.splitlines() if ":" in line)
+            fields = {key.strip().lower(): value.strip() for key, value in fields.items()}
+            if "processor" in fields:
+                processors.append(fields)
+        if processors:
+            first = processors[0]
+            cpu = {"Name": first.get("model name") or first.get("hardware") or result["processor"], "NumberOfLogicalProcessors": len(processors), "source": "/proc/cpuinfo"}
+            # A guest can hide physical topology. Do not infer core counts from
+            # thread counts; report only complete, explicit socket/core pairs.
+            if all(p.get("physical id") and p.get("core id") for p in processors):
+                cpu["NumberOfCores"] = len({(p["physical id"], p["core id"]) for p in processors})
+            result["cpu"] = cpu
+    elif sys.platform == "darwin":
+        def sysctl(name: str) -> str | None:
+            query = subprocess.run(["/usr/sbin/sysctl", "-n", name], text=True, capture_output=True, check=False)
+            return query.stdout.strip() if query.returncode == 0 else None
+
+        name = sysctl("machdep.cpu.brand_string") or sysctl("hw.model") or result["processor"]
+        cpu = {"Name": name, "source": "sysctl"}
+        for key, setting in [("NumberOfCores", "hw.physicalcpu"), ("NumberOfLogicalProcessors", "hw.logicalcpu")]:
+            value = sysctl(setting)
+            if value is not None and value.isdigit() and int(value) > 0:
+                cpu[key] = int(value)
+        result["cpu"] = cpu
     return result
 
 

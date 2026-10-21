@@ -36,12 +36,11 @@ try {
     if ($Tag -and $Tag -cne "v$($package.version)") {
         throw "Tag '$Tag' must match package version 'v$($package.version)'."
     }
-    if (-not $Target) {
-        $rustcVersion = & rustc --version --verbose
-        if ($LASTEXITCODE -ne 0) { throw 'rustc version lookup failed.' }
-        $Target = ($rustcVersion | Where-Object { $_ -like 'host: *' }) -replace '^host: ', ''
-        if (-not $Target) { throw 'Could not determine the Rust host target.' }
-    }
+    $rustcVersion = & rustc --version --verbose
+    if ($LASTEXITCODE -ne 0) { throw 'rustc version lookup failed.' }
+    $hostTarget = ($rustcVersion | Where-Object { $_ -like 'host: *' }) -replace '^host: ', ''
+    if (-not $hostTarget) { throw 'Could not determine the Rust host target.' }
+    if (-not $Target) { $Target = $hostTarget }
     if ($Target -notmatch '^[a-zA-Z0-9_]+(?:-[a-zA-Z0-9_]+)+$') {
         throw "Invalid Rust target triple '$Target'."
     }
@@ -59,6 +58,13 @@ try {
     $binary = Join-Path $metadata.target_directory $binaryPath
     if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
         throw "Release executable not found at '$binary'."
+    }
+    if ($Target -ceq $hostTarget) {
+        $binaryVersion = (& $binary --version) -join "`n"
+        if ($LASTEXITCODE -ne 0) { throw 'Release executable version check failed.' }
+        if ($binaryVersion.Trim() -cne "openbo $($package.version)") {
+            throw "Release executable reports '$($binaryVersion.Trim())'; expected 'openbo $($package.version)'. Rebuild before packaging."
+        }
     }
     if (-not $OutputDirectory) {
         $OutputDirectory = Join-Path $metadata.target_directory 'distribution'
