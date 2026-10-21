@@ -1,0 +1,83 @@
+name: Rust CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  stable:
+    name: Stable Rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install stable Rust components
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy --no-self-update
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default stable
+      - name: Formatting
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Unit and integration tests
+        run: cargo test --locked --all-targets
+      - name: Documentation examples
+        run: cargo test --locked --doc
+      - name: Documentation build
+        run: cargo doc --locked --no-deps
+      - name: Release build
+        run: cargo build --locked --release
+      - name: Package and verify the standalone crate
+        run: cargo package --locked
+      - name: Install into an isolated directory and run the student example
+        run: |
+          $installRoot = Join-Path $env:RUNNER_TEMP 'openbo-install'
+          cargo install --locked --path . --root $installRoot
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $executable = if ($IsWindows) { 'openbo.exe' } else { 'openbo' }
+          $binary = Join-Path $installRoot "bin/$executable"
+          & $binary --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $binary quickstart --n-evals 5
+      - name: Archive the crate for inspection
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: crate-${{ runner.os }}-${{ runner.arch }}
+          path: target/package/*.crate
+          if-no-files-found: error
+          retention-days: 14
+
+  minimum-rust:
+    name: Minimum Rust 1.85.1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the minimum supported toolchain
+        run: rustup toolchain install 1.85.1 --profile minimal --no-self-update
+      - name: Check every target at the minimum supported version
+        run: cargo +1.85.1 check --locked --all-targets

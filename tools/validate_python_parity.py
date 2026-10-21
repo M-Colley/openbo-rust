@@ -1,0 +1,325 @@
+"""Run optional numerical comparisons against a separate Python OpenBO reference.
+
+From this repository root, in a Python environment with reference dependencies::
+
+    python tools/validate_python_parity.py --python-checkout /path/to/python-openbo --build
+
+Omit --python-checkout to use an already installed Python OpenBO package.
+Python is a validation dependency only; the Rust library and CLI are native.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--binary", type=Path)
+    parser.add_argument(
+        "--python-checkout", type=Path,
+        help="separate Python OpenBO checkout containing src/openbo; omitted uses the installed package",
+    )
+    parser.add_argument(
+        "--build",
+        action="store_true",
+        help="Build the locked Rust release binary first.",
+    )
+    parser.add_argument(
+        "--report", type=Path, default=ROOT / "results/validation/python_parity.json"
+    )
+    args = parser.parse_args()
+    source_root = None
+    if args.python_checkout is not None:
+        source_root = args.python_checkout.expanduser().resolve() / "src"
+        if not (source_root / "openbo" / "__init__.py").is_file():
+            parser.error("--python-checkout must contain src/openbo/__init__.py")
+        sys.path.insert(0, str(source_root))
+    # Keep --help usable without NumPy, PyTorch, or a Python OpenBO installation.
+    try:
+        import numpy as np
+        import openbo
+        from openbo.acquisition.ei import expected_improvement_maximization
+        from openbo.acquisition.taf import compute_taf_m_weights
+        from openbo.acquisition.taf_eipv import (
+            log_taf_eipv,
+            reference_cells,
+            source_improvement,
+            taf_r_source_weights,
+        )
+        from openbo.benchmarks.hypervolume import hypervolume
+        from openbo.models.gp_scratch import GPScratch
+        from openbo.test_functions.metabo_families import (
+            normalized_branin,
+            normalized_goldstein_price,
+            normalized_hartmann3,
+        )
+        from openbo.test_functions.multi_objective import get_mo_function_spec
+        from openbo.test_functions.registry import get_function_spec
+    except ImportError as exc:
+        parser.error(
+            f"Optional Python parity dependencies are unavailable ({exc}). "
+            "Use a Python environment with the reference project's dependencies and "
+            "pass --python-checkout PATH, or install the Python OpenBO reference. "
+            "Native Rust builds/tests do not require Python."
+        )
+    reference_file = Path(openbo.__file__).resolve()
+    if source_root is not None and not reference_file.is_relative_to(source_root):
+        parser.error("A different Python OpenBO is already imported; use a fresh Python process")
+    executable = "openbo.exe" if sys.platform == "win32" else "openbo"
+    if args.build:
+        subprocess.run(
+            [
+                "cargo",
+                "build",
+                "--locked",
+                "--release",
+                "--manifest-path",
+                str(ROOT / "Cargo.toml"),
+            ],
+            check=True,
+        )
+    binary = args.binary.expanduser().resolve() if args.binary is not None else ROOT / "target/release" / executable
+    if args.binary is None and not binary.exists():
+        binary = ROOT / "target/debug" / executable
+    if not binary.exists():
+        parser.error(
+            "Build the binary first with cargo build --locked, pass --binary PATH, or use --build."
+        )
+    checks = []
+
+    def native(command: list[str], data: dict):
+        result = subprocess.run(
+            [str(binary), *command],
+            input=json.dumps(data, allow_nan=False),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        return json.loads(result.stdout)
+
+    def compare(name, actual, expected, *, atol=1e-9, rtol=1e-8):
+        actual = np.asarray(actual, dtype=float)
+        expected = np.asarray(expected, dtype=float)
+        if actual.shape != expected.shape:
+            raise AssertionError(f"{name}: shape mismatch {actual.shape} != {expected.shape}")
+        np.testing.assert_allclose(actual, expected, atol=atol, rtol=rtol, err_msg=name)
+        checks.append(
+            {
+                "name": name,
+                "values": int(actual.size),
+                "max_absolute_error": float(np.max(np.abs(actual - expected)))
+                if actual.size
+                else 0.0,
+            }
+        )
+
+    rng = np.random.default_rng(20261021)
+    for name in [
+        "branin",
+        "sphere",
+        "ackley",
+        "rastrigin",
+        "rosenbrock",
+        "hartmann6",
+        "mccormick",
+    ]:
+        spec = get_function_spec(name)
+        x = rng.random((17, spec.dim))
+        compare(
+            f"objective/{name}",
+            native(["evaluate", "--function", name], {"x": x.tolist()}),
+            spec.objective(x),
+        )
+    for name, dim, objective in [
+        ("normalized_branin", 2, normalized_branin),
+        ("normalized_goldstein_price", 2, normalized_goldstein_price),
+        ("normalized_hartmann3", 3, normalized_hartmann3),
+    ]:
+        x = rng.random((17, dim))
+        compare(
+            f"objective/{name}",
+            native(["evaluate", "--function", name], {"x": x.tolist()}),
+            objective(x),
+        )
+    for name in ["oka2", "vlmop3", "dtlz1a"]:
+        spec = get_mo_function_spec(name)
+        x = rng.random((17, spec.dim))
+        compare(
+            f"objective/{name}",
+            native(["evaluate", "--function", name, "--multi"], {"x": x.tolist()}),
+            spec.objective(x),
+        )
+
+    for kernel in ["rbf", "matern52"]:
+        for standardize in [False, True]:
+            for constant in [False, True]:
+                for noise in [0.0, 1e-4]:
+                    x = rng.random((7, 2))
+                    y = np.full(7, 2.5) if constant else np.sin(5 * x[:, 0]) + x[:, 1]
+                    query = np.vstack([rng.random((9, 2)), x[:2]])
+                    config = {
+                        "kernel_type": kernel,
+                        "lengthscale": [0.2, 0.6],
+                        "variance": 1.7,
+                        "noise": noise,
+                        "standardize_targets": standardize,
+                        "optimize_hyperparameters": False,
+                        "mean_constant": 0.3,
+                    }
+                    gp = GPScratch(**config)
+                    gp.fit(x, y)
+                    mean, var = gp.posterior(query)
+                    result = native(
+                        ["gp"],
+                        {
+                            "config": config,
+                            "x_train": x.tolist(),
+                            "y_train": y.tolist(),
+                            "x_test": query.tolist(),
+                        },
+                    )
+                    name = f"gp/{kernel}/standardize={standardize}/constant={constant}/noise={noise}"
+                    compare(name + "/mean", result["mean"], mean, atol=2e-7)
+                    compare(name + "/variance", result["variance"], var, atol=2e-8)
+                    cross = gp._kernel(x, query)
+                    v = np.linalg.solve(gp.l_chol, cross)
+                    covariance = (gp._kernel(query, query) - v.T @ v) * gp.y_std**2
+                    compare(
+                        name + "/covariance",
+                        result["covariance"],
+                        covariance,
+                        atol=2e-8,
+                    )
+
+    means = np.linspace(-10, 10, 41)
+    variances = np.geomspace(1e-12, 5.0, len(means))
+    compare(
+        "acquisition/ei",
+        native(
+            ["acquisition"],
+            {
+                "operation": "ei",
+                "mean": means.tolist(),
+                "variance": variances.tolist(),
+                "best": 0.2,
+            },
+        ),
+        expected_improvement_maximization(means, variances, 0.2),
+        atol=1e-12,
+    )
+    for dim in [2, 3, 4]:
+        points = rng.uniform(-0.5, 1.5, (12, dim))
+        reference = np.full(dim, -1.0)
+        compare(
+            f"geometry/hypervolume{dim}d",
+            native(
+                ["acquisition"],
+                {
+                    "operation": "hypervolume",
+                    "y": points.tolist(),
+                    "reference": reference.tolist(),
+                },
+            ),
+            hypervolume(points, reference),
+            atol=1e-9,
+        )
+    source_meta = rng.normal(size=(6, 5))
+    target_meta = rng.normal(size=5)
+    for rho in [0.1, 1.0, 10.0]:
+        compare(
+            f"transfer/meta/{rho}",
+            native(
+                ["acquisition"],
+                {
+                    "operation": "meta",
+                    "sources": source_meta.tolist(),
+                    "target": target_meta.tolist(),
+                    "rho": rho,
+                },
+            ),
+            compute_taf_m_weights(source_meta, target_meta, rho),
+            atol=1e-12,
+        )
+
+    for dim in [2, 3]:
+        lower, upper = np.full(dim, -1.0), np.full(dim, 2.0)
+        means = rng.uniform(-1.5, 3.0, (19, dim))
+        for label, front in [
+            ("empty", np.empty((0, dim))),
+            ("partial", rng.uniform(-0.5, 1.5, (7, dim))),
+        ]:
+            expected = source_improvement(means, reference_cells(front, lower, upper))
+            actual = native(
+                ["acquisition"],
+                {
+                    "operation": "taf_eipv_sources",
+                    "front": front.tolist(),
+                    "reference": lower.tolist(),
+                    "upper": upper.tolist(),
+                    "mean": means.tolist(),
+                },
+            )
+            compare(f"taf_eipv/source_gain/{dim}/{label}", actual, expected, atol=1e-10)
+    target = rng.normal(size=(7, 3))
+    predicted = np.stack([target, -target, rng.normal(size=target.shape)])
+    for rho in [0.1, 0.7, 1.0]:
+        expected = taf_r_source_weights(target, predicted, rho)
+        actual = native(
+            ["acquisition"],
+            {
+                "operation": "taf_eipv_weights",
+                "y": target.tolist(),
+                "predictions": predicted.tolist(),
+                "rho": rho,
+            },
+        )
+        compare(f"taf_eipv/ranking/{rho}", actual, expected, atol=1e-12)
+    terms = rng.uniform(0.0, 3.0, (3, 13))
+    terms[0, 0] = 0.0
+    weights = np.array([0.75, 0.0, 0.6])
+    log_target = np.log(rng.uniform(0.01, 1.0, 13))
+    for label, target, sources, source_weights in [
+        ("joint", log_target, terms, weights),
+        ("sources", None, terms, weights),
+        ("target", log_target, np.empty((0, 13)), np.empty(0)),
+    ]:
+        expected = log_taf_eipv(target, sources, source_weights, 0.75)
+        actual = native(
+            ["acquisition"],
+            {
+                "operation": "taf_eipv_blend",
+                "target_log": None if target is None else target.tolist(),
+                "source_terms": sources.tolist(),
+                "weights": source_weights.tolist(),
+                "target_weight": 0.75,
+            },
+        )
+        compare(f"taf_eipv/log_blend/{label}", actual, expected, atol=1e-12)
+
+    report = {
+        "status": "passed",
+        "groups": len(checks),
+        "values_compared": sum(c["values"] for c in checks),
+        "binary": str(binary),
+        "python": sys.version,
+        "python_openbo": str(reference_file),
+        "python_checkout": str(source_root.parent) if source_root is not None else None,
+        "checks": checks,
+    }
+    args.report.parent.mkdir(parents=True, exist_ok=True)
+    args.report.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(
+        f"PASS: {len(checks)} numerical groups; {report['values_compared']} values compared"
+    )
+    print(f"Report: {args.report}")
+
+
+if __name__ == "__main__":
+    main()

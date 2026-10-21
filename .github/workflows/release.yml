@@ -1,0 +1,136 @@
+name: Build release assets
+
+# This workflow only prepares downloadable artifacts. It never creates a
+# GitHub Release or uploads a package to crates.io. Publish reviewed assets
+# separately after CI has passed.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  binary:
+    name: CLI (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the stable target
+        run: |
+          rustup toolchain install stable --profile minimal --target '${{ matrix.target }}' --no-self-update
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default stable
+      - name: Install the static Linux linker
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y musl-tools
+      - name: Build and archive the CLI
+        id: package
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { '' }
+          ./tools/package-release.ps1 -Target $env:BUILD_TARGET -Tag $tag
+      - name: Smoke test the packaged target
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          $executable = if ($IsWindows) { 'openbo.exe' } else { 'openbo' }
+          & "./target/$env:BUILD_TARGET/release/$executable" --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "./target/$env:BUILD_TARGET/release/$executable" quickstart --n-evals 5
+      - name: Upload reviewed-release candidates
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli-${{ matrix.target }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.checksum }}
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
+  source:
+    name: Crate and source archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default stable
+      - name: Verify the tag and package from source
+        run: |
+          $metadata = (cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $package = $metadata.packages[0]
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -cne "v$($package.version)") {
+            throw 'Release tag must match Cargo.toml version.'
+          }
+          cargo package --locked
+      - name: Prepare source archive and checksums
+        run: |
+          $metadata = (cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $package = $metadata.packages[0]
+          $baseName = "$($package.name)-$($package.version)"
+          $destination = Join-Path $metadata.target_directory 'distribution'
+          New-Item -ItemType Directory -Path $destination -Force | Out-Null
+          $crate = Join-Path $metadata.target_directory "package/$baseName.crate"
+          Copy-Item -LiteralPath $crate -Destination $destination
+          $archive = Join-Path $destination "$baseName-source.tar.gz"
+          git archive --format=tar.gz --prefix="$baseName/" --output=$archive HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files = @((Join-Path $destination "$baseName.crate"), $archive)
+          $lines = $files | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $([IO.Path]::GetFileName($_))"
+          }
+          [IO.File]::WriteAllLines((Join-Path $destination 'SHA256SUMS.txt'), $lines, [Text.UTF8Encoding]::new($false))
+      - name: Upload source release candidates
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: crate-and-source
+          path: |
+            target/distribution/*.crate
+            target/distribution/*-source.tar.gz
+            target/distribution/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0

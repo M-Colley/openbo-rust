@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "Cite this Rust implementation and upstream OpenBO. Please also cite the methods you use; see relevant_papers/references.bib and UPSTREAM_CITATION.cff."
+type: software
+title: "OpenBO Rust: Native Bayesian Optimization"
+authors:
+  - given-names: Mark
+    family-names: Colley
+repository-code: "https://github.com/M-Colley/openbo-rust"
+url: "https://github.com/M-Colley/openbo-rust"
+license: MIT
+version: 0.1.0
+date-released: 2026-10-21
+references:
+  - type: software
+    title: "OpenBO: An Open-Source Library for Bayesian Optimization"
+    authors:
+      - given-names: Yi-Chi
+        family-names: Liao
+      - given-names: Mark
+        family-names: Colley
+      - given-names: George
+        family-names: Mo
+      - given-names: Chih-Hao
+        family-names: Hsu
+      - given-names: Kuan-Lin
+        family-names: Lee
+    repository-code: "https://github.com/yichiliao/openbo"
